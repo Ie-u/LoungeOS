@@ -45,11 +45,12 @@ export default function SessionActions({ options, sessions, canOperate }: { opti
 
   return <div className="actions-area">
     {message && <p className="notice error" role="status">{message}</p>}
-    {canOperate && <form className="start-form" onSubmit={start}>
+    {canOperate && options.length > 0 && <form className="start-form" onSubmit={start}>
       <label>Table<input name="table_label" maxLength={32} placeholder="e.g. T-04" required /></label>
       <label>Shisha option<select name="option_id" required defaultValue=""><option value="" disabled>Select an option</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name} · {option.duration_minutes} min</option>)}</select></label>
-      <button className="primary-button" disabled={busy || options.length === 0}>{busy ? 'Working…' : 'Start session'}</button>
+      <button className="primary-button" disabled={busy}>{busy ? 'Working…' : 'Start session'}</button>
     </form>}
+    {canOperate && options.length === 0 && <p className="notice role-notice">No active shisha options are configured. Add an available option to the Supabase catalog before starting a session.</p>}
     <div className="session-list">{sessions.map((session) => <article className="session-row" key={session.id}>
       <span className="table-icon">{session.table_label}</span><span className="session-name"><b>{session.option_name}</b><small>Ends {new Date(session.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></span><span className={`state ${session.timing_status}`}>{session.timing_status.replace('_', ' ')}</span>
       {canOperate && session.timing_status !== 'ended' && <div className="row-actions"><button onClick={() => updateSession(session.id, 'extend')} disabled={busy}>+15 min</button><button className="end-button" onClick={() => updateSession(session.id, 'end')} disabled={busy}>End</button></div>}

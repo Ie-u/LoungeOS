@@ -1,4 +1,6 @@
-import { createClient } from '@/lib/supabase/server'
+import Link from 'next/link'
+import AppShell from '@/components/app-shell'
+import { getStaffContext } from '@/lib/supabase/staff-context'
 import SessionActions from './sessions/actions'
 
 type LoungeSession = {
@@ -13,55 +15,54 @@ type LoungeSession = {
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  const supabase = await createClient()
-  if (!supabase) return <SetupNotice />
-  const { data } = await supabase.auth.getClaims()
-  const claims = data?.claims
-  if (!claims) return <Login />
+  const context = await getStaffContext()
+  if (!context) return <main className="center"><div className="setup-card"><h1>Sign in to LoungeOS</h1><p>Use your staff account to open the operations dashboard.</p><Link className="primary-button full" href="/login">Continue to sign in</Link></div></main>
 
-  const { data: profile } = await supabase.from('staff_profiles').select('display_name, role').eq('user_id', claims.sub).maybeSingle()
-  const { data: sessions, error } = await supabase
-    .from('session_board')
-    .select('id, table_label, option_name, started_at, ends_at, status, timing_status')
-    .neq('status', 'ended')
-    .order('ends_at')
-  const { data: options } = await supabase.from('shisha_options').select('id, name, duration_minutes').eq('is_available', true).order('name')
-
+  const { supabase, profile } = context
+  const dateParts = new Intl.DateTimeFormat('en-KE', { timeZone: 'Africa/Nairobi', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const today = `${dateParts.find((part) => part.type === 'year')?.value}-${dateParts.find((part) => part.type === 'month')?.value}-${dateParts.find((part) => part.type === 'day')?.value}`
+  const dayStart = new Date(`${today}T00:00:00+03:00`).toISOString()
+  const [{ data: sessions, error }, { data: paidToday }] = await Promise.all([
+    supabase.from('session_board').select('id, table_label, option_name, started_at, ends_at, timing_status').neq('status', 'ended').order('ends_at').limit(100),
+    supabase.from('lounge_orders').select('total_cents').eq('payment_status', 'paid').gte('created_at', dayStart).limit(2000),
+  ])
   const rows = (sessions ?? []) as LoungeSession[]
-  const overdue = rows.filter((s) => s.timing_status === 'overdue').length
-  const ending = rows.filter((s) => s.timing_status === 'ending_soon').length
-  const canOperate = ['owner', 'admin', 'cashier'].includes(profile?.role ?? '')
-  const dateLabel = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Africa/Nairobi' }).format(new Date()).toUpperCase()
+  const overdue = rows.filter((session) => session.timing_status === 'overdue').length
+  const endingSoon = rows.filter((session) => session.timing_status === 'ending_soon').length
+  const shiftRevenue = (paidToday ?? []).reduce((sum, order) => sum + Number(order.total_cents), 0)
+  const money = new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 })
+  const canOperate = ['owner', 'admin', 'cashier'].includes(profile.role)
+  const dateLabel = new Intl.DateTimeFormat('en-KE', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Africa/Nairobi' }).format(new Date()).toUpperCase()
 
-  return <main className="shell">
-    <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">L</span><span>Lounge<span className="brand-light">OS</span><small>BY CYNUX PRODUCTION</small></span></div>
-      <nav><a className="nav-active" href="#overview">▦ <span>Overview</span></a><a href="#sessions">◷ <span>Sessions</span></a><a className="nav-muted">▤ <span>Orders</span></a><a className="nav-muted">◈ <span>Inventory</span></a><a className="nav-muted">▥ <span>Reports</span></a></nav>
-      <div className="sidebar-bottom"><span className="avatar">{(profile?.display_name ?? 'S').slice(0, 1).toUpperCase()}</span><span className="staff"><b>{profile?.display_name ?? 'Staff member'}</b><small>{profile?.role ?? 'attendant'}</small></span><form action="/auth/signout" method="post"><button className="icon-button" title="Sign out" aria-label="Sign out">↪</button></form></div>
-    </aside>
-    <section className="content" id="overview">
-      <header className="topbar"><div><p className="eyebrow">OPERATIONS / OVERVIEW</p><h1>Good shift, {profile?.display_name?.split(' ')[0] ?? 'team'} <span>✦</span></h1></div><div className="live-pill"><i /> LIVE OPERATIONS</div></header>
+  return <AppShell profile={profile}>
+    <main className="content" id="overview">
+      <header className="topbar">
+        <div><p className="eyebrow">OPERATIONS / OVERVIEW</p><h1>Good shift, {profile.display_name.split(' ')[0]} <span>✦</span></h1></div>
+        <div className="live-pill"><i /> LIVE OPERATIONS</div>
+      </header>
       <div className="date-strip">{dateLabel} <span>·</span> LOUNGE OPERATIONS</div>
-      <section className="stats">
+      <section className="stats" aria-label="Live operations summary">
         <article><span>ACTIVE SESSIONS</span><strong>{rows.length.toString().padStart(2, '0')}</strong><small>Across the lounge</small><b className="stat-icon">◷</b></article>
-        <article><span>ENDING SOON</span><strong>{ending.toString().padStart(2, '0')}</strong><small>Next 10 minutes</small><b className="stat-icon warn">⌛</b></article>
+        <article><span>ENDING SOON</span><strong>{endingSoon.toString().padStart(2, '0')}</strong><small>Next 10 minutes</small><b className="stat-icon warn">⌛</b></article>
         <article><span>OVERDUE</span><strong>{overdue.toString().padStart(2, '0')}</strong><small>Need attention</small><b className="stat-icon danger">!</b></article>
-        <article><span>SHIFT REVENUE</span><strong>—</strong><small>Orders milestone</small><b className="stat-icon">↗</b></article>
+        <article><span>PAID TODAY</span><strong className="metric-money">{money.format(shiftRevenue / 100)}</strong><small>Confirmed by lounge staff</small><b className="stat-icon report">↗</b></article>
       </section>
       <section className="panel" id="sessions">
-        <div className="panel-head"><div><p className="eyebrow">RIGHT NOW</p><h2>Live sessions <span className="count">{rows.length}</span></h2></div><a href="#new-session" className="primary-button">＋ Start session</a></div>
-        {error ? <p className="notice error">Could not load sessions. Check your database migration and staff permissions.</p> : rows.length === 0 ? <div className="empty"><span>◷</span><b>No active sessions yet</b><p>When a session starts, its live timer will appear here.</p></div> : null}
-        {!error && <div id="new-session"><h3 className="action-heading">Session controls</h3><SessionActions options={options ?? []} sessions={rows.map((s) => ({ id: s.id, table_label: s.table_label, option_name: s.option_name, ends_at: s.ends_at, timing_status: s.timing_status }))} canOperate={canOperate} /></div>}
+        <div className="panel-head"><div><p className="eyebrow">RIGHT NOW</p><h2>Live sessions <span className="count">{rows.length}</span></h2></div><Link href="/sessions#new-session" className="primary-button">＋ Start session</Link></div>
+        {error ? <p className="notice error">Could not load sessions. Check the migration status and your staff permissions.</p> : rows.length === 0 ? <div className="empty"><span>◷</span><b>No active sessions yet</b><p>Start a session to see its timer and status here.</p></div> : null}
+        {!error && <div className="session-list">{rows.slice(0, 5).map((session) => <article className="session-row" key={session.id}>
+          <span className="table-icon">{session.table_label}</span>
+          <span className="session-name"><b>{session.option_name}</b><small>Ends {new Date(session.ends_at).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Nairobi' })}</small></span>
+          <span className={`state ${session.timing_status}`}>{session.timing_status.replace('_', ' ')}</span>
+        </article>)}</div>}
+        {!canOperate && <p className="notice role-notice">Your attendant account can view assigned sessions. Owner, admin, or cashier access is required to start or change a session.</p>}
       </section>
-      <p className="footnote">Session timing is calculated from database timestamps. Last refreshed {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</p>
-    </section>
-  </main>
-}
-
-function SetupNotice() {
-  return <main className="center"><div className="setup-card"><div className="brand-mark">L</div><p className="eyebrow">LOUNGEOS · CYNUX PRODUCTION</p><h1>Connect your development database</h1><p>Add the Supabase project URL and publishable key to <code>.env.local</code>, then run the initial migration.</p><div className="setup-step">1 <span>Copy <code>.env.example</code> to <code>.env.local</code></span></div><div className="setup-step">2 <span>Run <code>npm run dev</code></span></div></div></main>
-}
-
-function Login() {
-  return <main className="center"><div className="setup-card"><div className="brand-mark">L</div><p className="eyebrow">CYNUX PRODUCTION</p><h1>Welcome to LoungeOS</h1><p>Sign in with your staff account to manage lounge operations.</p><form action="/auth/login" method="get"><button className="primary-button full">Continue to staff sign in →</button></form></div></main>
+      <section className="quick-links" aria-label="Operations shortcuts">
+        <Link href="/orders"><span>▤</span><b>Record an order</b><small>Link a charge to a table</small></Link>
+        <Link href="/inventory"><span>◈</span><b>Update stock</b><small>Log a stock movement</small></Link>
+        <Link href="/reports"><span>▥</span><b>View reports</b><small>Review daily totals</small></Link>
+      </section>
+      <p className="footnote">Session timing comes from PostgreSQL and refreshes every 30 seconds.</p>
+    </main>
+  </AppShell>
 }
