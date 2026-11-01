@@ -1,6 +1,8 @@
 import AppShell from '@/components/app-shell'
+import { createClient as createSupabaseJsClient } from '@supabase/supabase-js'
 import { getStaffContext } from '@/lib/supabase/staff-context'
 import StaffManager, { type AuditRow, type BusinessSettings, type StaffRow } from './staff-manager'
+import OwnerProfile from './owner-profile'
 import type { SessionOption } from './session-presets'
 
 export const dynamic = 'force-dynamic'
@@ -17,6 +19,21 @@ export default async function AdminPage() {
     supabase.from('business_settings').select('business_name, venue_latitude, venue_longitude, geofence_radius_m, max_location_accuracy_m, session_alert_minutes, low_stock_alert_enabled').eq('singleton', true).maybeSingle(),
     supabase.from('audit_events').select('id, entity_type, action, created_at').order('created_at', { ascending: false }).limit(50),
   ])
+  const authUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const authUsers = new Map<string, { email: string | null; email_confirmed_at: string | null }>()
+  let authUsersError = !authUrl || !serviceKey
+  if (authUrl && serviceKey) {
+    const service = createSupabaseJsClient(authUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    const { data, error: authError } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 })
+    authUsersError = Boolean(authError)
+    for (const user of data?.users ?? []) authUsers.set(user.id, { email: user.email ?? null, email_confirmed_at: user.email_confirmed_at ?? null })
+  }
+  const staffRows = (staff ?? []).map((member) => ({
+    ...member,
+    email: authUsers.get(member.user_id)?.email ?? null,
+    email_confirmed_at: authUsers.get(member.user_id)?.email_confirmed_at ?? null,
+  })) as StaffRow[]
   const { data: optionData } = canEditSettings
     ? await supabase.from('shisha_options').select('id,name,duration_minutes,price_cents,is_available').order('name')
     : { data: [] }
@@ -33,6 +50,8 @@ export default async function AdminPage() {
   return <AppShell profile={profile}><main className="content">
     <header className="page-heading"><div><p className="eyebrow">BUSINESS CONTROL</p><h1>Staff & settings</h1><p>Control staff access, venue rules, and review operational changes.</p></div><span className="page-count">{profile.role}</span></header>
     {staffError && <p className="notice error">Could not load the staff roster. Check that the access migration has been applied.</p>}
-    <StaffManager profile={profile} staff={(staff ?? []) as StaffRow[]} settings={settings as BusinessSettings | null} audit={(audit ?? []) as AuditRow[]} canEditSettings={canEditSettings} integrations={integrations} sessionOptions={(optionData ?? []) as SessionOption[]} />
+    {authUsersError && <p className="notice error">Staff email and invitation verification are unavailable. Check the server-only service key and Supabase Auth Admin API.</p>}
+    {profile.role === 'owner' && <OwnerProfile profile={profile} />}
+    <StaffManager profile={profile} staff={staffRows} settings={settings as BusinessSettings | null} audit={(audit ?? []) as AuditRow[]} canEditSettings={canEditSettings} integrations={integrations} sessionOptions={(optionData ?? []) as SessionOption[]} />
   </main></AppShell>
 }

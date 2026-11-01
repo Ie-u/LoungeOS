@@ -27,7 +27,7 @@ export default function UpdatePasswordPage() {
   }
 
   return <main className="center"><form className="setup-card login-card" onSubmit={update}>
-    <p className="eyebrow">ACCOUNT RECOVERY</p><h1>Set a new password</h1><p>Your new password is handled by Supabase Auth and is never shown to staff managers.</p>
+    <p className="eyebrow">ACCOUNT SETUP</p><h1>Set a new password</h1><p>Choose a password for your LoungeOS account. Supabase Auth secures the password and it is never shown to staff managers.</p>
     <label>New password<input name="password" type="password" minLength={12} autoComplete="new-password" required /></label>
     <label>Confirm new password<input name="confirmation" type="password" minLength={12} autoComplete="new-password" required /></label>
     {message && <p className={`notice ${error ? 'error' : 'success-notice'}`} role="status">{message}</p>}

@@ -25,18 +25,27 @@ export default async function Home() {
   const dayEnd = new Date(dayStartDate.getTime() + 24 * 60 * 60 * 1000).toISOString()
   const canSeeSales = ['owner', 'admin', 'manager', 'cashier'].includes(profile.role)
   const canSeeInventory = canSeeSales || profile.role === 'flavor_specialist'
-  const [{ data: settings }, { data: sessions, error }, { data: paidToday }] = await Promise.all([
+  const [{ data: settings }, { data: sessions, error }, { data: paidToday, error: salesError }] = await Promise.all([
     supabase.from('business_settings').select('session_alert_minutes, low_stock_alert_enabled').eq('singleton', true).maybeSingle(),
     supabase.from('session_board').select('id, table_label, option_name, started_at, ends_at, timing_status').neq('status', 'ended').order('ends_at').limit(100),
-    canSeeSales ? supabase.from('lounge_orders').select('total_cents').eq('payment_status', 'paid').eq('status', 'open').gte('paid_at', dayStart).lt('paid_at', dayEnd).limit(2000) : Promise.resolve({ data: [], error: null }),
+    canSeeSales ? supabase.rpc('get_lounge_report', { p_from: dayStart, p_to: dayEnd }) : Promise.resolve({ data: [], error: null }),
   ])
   const { data: lowStockData } = settings?.low_stock_alert_enabled && canSeeInventory
     ? await supabase.rpc('get_low_stock_count')
     : { data: 0 }
+  const canReviewBusiness = ['owner', 'admin'].includes(profile.role)
+  const [attendanceQueue, paybillQueue, c2bQueue, unreadQueue] = canReviewBusiness
+    ? await Promise.all([
+      supabase.from('attendance_exceptions').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('paybill_claims').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('mpesa_c2b_transactions').select('id', { count: 'exact', head: true }).in('status', ['unmatched', 'matched', 'ambiguous']),
+      supabase.from('staff_notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
+    ])
+    : [{ count: 0, error: null }, { count: 0, error: null }, { count: 0, error: null }, { count: 0, error: null }]
   const rows = (sessions ?? []) as LoungeSession[]
   const overdue = rows.filter((session) => session.timing_status === 'overdue').length
   const endingSoon = rows.filter((session) => session.timing_status === 'ending_soon').length
-  const shiftRevenue = (paidToday ?? []).reduce((sum, order) => sum + Number(order.total_cents), 0)
+  const shiftRevenue = Number(paidToday?.[0]?.gross_sales_cents ?? 0)
   const money = new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 })
   const canOperate = ['owner', 'admin', 'manager', 'cashier'].includes(profile.role)
   const lowStockCount = Number(lowStockData ?? 0)
@@ -57,6 +66,7 @@ export default async function Home() {
         {canSeeSales && <article><span>PAID TODAY</span><strong className="metric-money">{money.format(shiftRevenue / 100)}</strong><small>Recorded by authorized staff</small><b className="stat-icon report">↗</b></article>}
         {settings?.low_stock_alert_enabled && canSeeInventory && <article><span>LOW STOCK</span><strong>{lowStockCount.toString().padStart(2, '0')}</strong><small>At or below reorder level</small><b className="stat-icon warn">◈</b></article>}
       </section>
+      {salesError && canSeeSales && <p className="notice error">Today’s sales summary could not be loaded. Open Reports to review the reporting status.</p>}
       <section className="panel" id="sessions">
         <div className="panel-head"><div><p className="eyebrow">RIGHT NOW</p><h2>Live sessions <span className="count">{rows.length}</span></h2></div>{canOperate && <Link href="/sessions#new-session" className="primary-button">＋ Start session</Link>}</div>
         {error ? <p className="notice error">Could not load sessions. Check the migration status and your staff permissions.</p> : rows.length === 0 ? <div className="empty"><span>◷</span><b>No active sessions yet</b><p>Start a session to see its timer and status here.</p></div> : null}
@@ -73,6 +83,21 @@ export default async function Home() {
         <Link href="/attendance"><span>◉</span><b>Attendance</b><small>Check in or review a shift</small></Link>
         {canSeeSales && <Link href="/reports"><span>▥</span><b>View reports</b><small>Review daily totals</small></Link>}
       </section>
+      {canReviewBusiness && <section className="owner-console">
+        {[attendanceQueue, paybillQueue, c2bQueue, unreadQueue].some((result) => result.error) && <p className="notice error">Some owner review counts could not be loaded. Open the related pages to check for pending work.</p>}
+        <div className="panel-head"><div><p className="eyebrow">OWNER WORKSPACE</p><h2>Business overview</h2></div><Link href="/integrations" className="text-link">Integration setup →</Link></div>
+        <div className="owner-links">
+          <Link href="/reports"><span>↗</span><b>Financial reports</b><small>Sales, expenses, and operating result</small></Link>
+          <Link href="/admin#staff-accounts"><span>♙</span><b>Staff management</b><small>Roles, invites, and account access</small></Link>
+          <Link href="/attendance"><span>◉</span><b>Attendance & exceptions</b><small>{attendanceQueue.count ?? 0} requests waiting for review</small></Link>
+          <Link href="/notifications"><span>♢</span><b>Alerts</b><small>{unreadQueue.count ?? 0} unread operational alerts</small></Link>
+          <Link href="/orders#payment-reconciliation"><span>⇄</span><b>Payment reconciliation</b><small>{(paybillQueue.count ?? 0) + (c2bQueue.count ?? 0)} claims or confirmations to review</small></Link>
+          <Link href="/admin#recent-audit"><span>▤</span><b>Audit log</b><small>Recent staff and operations changes</small></Link>
+          <Link href="/inventory"><span>◈</span><b>Inventory</b><small>Catalogue, stock, and reorder levels</small></Link>
+          <Link href="/flavors"><span>❋</span><b>Flavor operations</b><small>Assignments and preparation status</small></Link>
+          <Link href="/admin#business-settings"><span>⚙</span><b>Business settings</b><small>Venue, attendance, and session rules</small></Link>
+        </div>
+      </section>}
       <p className="footnote">Session timing comes from PostgreSQL and refreshes every 30 seconds.</p>
     </main>
   </AppShell>

@@ -26,6 +26,20 @@ The database migrations are tracked in `supabase/migrations`. They have been app
 
 `SUPABASE_SERVICE_ROLE_KEY` is server-only and required for staff invitations, account recovery, and M-Pesa callbacks. `NEXT_PUBLIC_APP_URL` must be the public HTTPS LoungeOS URL in production.
 
+### Supabase Auth email delivery
+
+The repository includes local Auth email templates in `supabase/templates/` and references them from `supabase/config.toml`. The invite template sends a secure invitation link to `/auth/callback?next=/auth/update-password`; the Magic Link template sends the Supabase-generated one-time token for the email-code sign-in screen. Local template files do not change hosted Auth settings automatically.
+
+For the hosted project, configure custom SMTP in Supabase Dashboard → Authentication → SMTP Settings, and copy the templates into Authentication → Email Templates. Supabase's default SMTP is restricted to project team addresses and is intended for development. Add the deployed `/auth/callback` URL to the Auth redirect allow-list. LoungeOS never creates, stores, or logs OTP codes. Supabase Auth applies its own email-send rate limits; the sign-in screen also waits 60 seconds before offering a resend.
+
+Staff invitations are created through Supabase Auth before the assigned LoungeOS role is updated. Existing, unconfirmed, and deactivated accounts are detected and handled without creating a duplicate staff record. If Auth reports an invitation delivery failure after creating the unconfirmed account, LoungeOS removes that exact failed invite attempt when possible and never reports it as sent.
+
+### Owner dashboard and profile
+
+Owners get shortcuts to financial reports, staff, attendance exceptions, alerts, M-Pesa reconciliation, audit activity, inventory, flavor tasks, business settings, and integrations. The owner can change the display name and upload a JPG, PNG, or WebP profile image (maximum 2 MB). Images are stored in the private `staff-avatars` bucket; signed image delivery requires the owner's active session. The owner profile, storage policies, and dashboard changes are in migration `20261101233217_owner_profile_dashboard.sql`.
+
+The Integrations area reports environment-variable readiness but does not accept secret values. Daraja secrets are currently read from the hosting provider's server-only environment. Rotate them there and redeploy; this project has no application secret vault or deployment-environment management API. Readiness does not replace a real provider sandbox test.
+
 Daraja settings are server-only: `MPESA_ENV`, `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`, `MPESA_SHORTCODE`, `MPESA_PASSKEY`, and `MPESA_TRANSACTION_TYPE`. Configure `MPESA_PAYBILL_NUMBER` or `MPESA_TILL_NUMBER` to display/enable manual payment claims. For C2B confirmation intake, set `MPESA_C2B_CALLBACK_TOKEN` to at least 32 random bytes encoded as hex, then register the public HTTPS URLs `https://<app>/api/mpesa/c2b/<token>/validation` and `/confirmation` in Daraja. The callback path token is a server-side secret; do not publish it in logs or screenshots. Use sandbox settings until Safaricom production credentials and the callback URL have been approved and verified. STK amounts must be whole KES. Never put server secrets in `NEXT_PUBLIC_*` variables.
 
 Venue latitude/longitude and geofence radius must be configured by an owner/admin; no location is assumed. Configure Supabase Auth email delivery and allowed redirect URLs before staff invitations or recovery are used.

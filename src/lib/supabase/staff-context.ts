@@ -3,8 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 export type StaffProfile = {
   user_id: string
   display_name: string
+  avatar_path?: string | null
   role: 'owner' | 'admin' | 'manager' | 'cashier' | 'attendant' | 'flavor_specialist'
   is_active: boolean
+  updated_at?: string
 }
 
 export async function getStaffContext() {
@@ -17,7 +19,7 @@ export async function getStaffContext() {
 
   const { data: profile, error } = await supabase
     .from('staff_profiles')
-    .select('user_id, display_name, role, is_active')
+    .select('user_id, display_name, avatar_path, role, is_active, updated_at')
     .eq('user_id', userId)
     .maybeSingle()
 

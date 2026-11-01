@@ -17,6 +17,7 @@ const sections = [
   { href: '/notifications', label: 'Notifications', icon: '♢', roles: ['owner', 'admin', 'manager', 'cashier', 'attendant', 'flavor_specialist'] },
   { href: '/flavors', label: 'Flavor tasks', icon: '❋', roles: ['owner', 'admin', 'manager', 'flavor_specialist'] },
   { href: '/admin', label: 'Staff & settings', icon: '⚙', roles: ['owner', 'admin', 'manager'] },
+  { href: '/integrations', label: 'Integrations', icon: '⌘', roles: ['owner', 'admin'] },
 ]
 
 export default function AppShell({ profile, children }: { profile: StaffProfile; children: ReactNode }) {
@@ -51,9 +52,9 @@ export default function AppShell({ profile, children }: { profile: StaffProfile;
         ><span className="nav-icon" aria-hidden="true">{section.icon}</span><span>{section.label}</span>{section.href === '/notifications' && unreadNotifications > 0 && <span className="nav-count">{unreadNotifications > 99 ? '99+' : unreadNotifications}</span>}</Link>)}
       </nav>
       <div className="sidebar-bottom">
-        <span className="avatar" aria-hidden="true">{initial}</span>
+        <span className="avatar" aria-hidden="true">{profile.avatar_path ? <Image src={`/api/owner/avatar?v=${encodeURIComponent(profile.updated_at ?? '')}`} alt="" width={36} height={36} unoptimized /> : initial}</span>
         <span className="staff"><b>{profile.display_name}</b><small>{profile.role}</small></span>
-        <form action="/auth/signout" method="post"><button className="icon-button" title="Sign out" aria-label="Sign out">↪</button></form>
+        <form action="/auth/signout" method="post"><button className="icon-button logout-button">↪ <span>Log out</span></button></form>
       </div>
     </aside>
     <div className="app-main">{children}</div>

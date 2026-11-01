@@ -79,7 +79,6 @@ export default function OrderManager({ orders, sessions, products, canOperate, c
       </tr>)}
       {orders.length === 0 && <tr><td colSpan={6} className="table-empty">No orders recorded yet.</td></tr>}
     </tbody></table></div>
-    <PaybillReviewQueue claims={claims} canReview={canReviewPayments} />
-    <C2bReviewQueue transactions={c2bTransactions} />
+    <div id="payment-reconciliation"><PaybillReviewQueue claims={claims} canReview={canReviewPayments} /><C2bReviewQueue transactions={c2bTransactions} /></div>
   </>
 }
