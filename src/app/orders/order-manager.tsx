@@ -3,18 +3,18 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { PaymentControls, PaybillReviewQueue, type PaybillClaim } from './payment-controls'
+import { PaymentControls, PaybillReviewQueue, C2bReviewQueue, type PaybillClaim, type C2bTransaction } from './payment-controls'
 
 type ActiveSession = { id: string; table_label: string; option_name: string }
 export type OrderProduct = { id: string; name: string; sale_price_cents: number; unit: string; track_inventory: boolean }
 type DraftLine = { productId: string; quantity: number }
 type OrderItem = { name: string; quantity: number; unit_price_cents: number; line_total_cents: number; unit_cost_cents: number | null }
-export type LoungeOrder = { id: string; table_label: string; total_cents: number; payment_status: string; status: string; created_at: string; lounge_order_items: OrderItem[]; latest_payment_status?: string }
+export type LoungeOrder = { id: string; payment_reference: string; table_label: string; total_cents: number; payment_status: string; status: string; created_at: string; lounge_order_items: OrderItem[]; latest_payment_status?: string }
 
 const currency = new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES' })
 const formatMoney = (cents: number) => currency.format(Number(cents || 0) / 100)
 
-export default function OrderManager({ orders, sessions, products, canOperate, claims, canReviewPayments, canPaybill }: { orders: LoungeOrder[]; sessions: ActiveSession[]; products: OrderProduct[]; canOperate: boolean; claims: PaybillClaim[]; canReviewPayments: boolean; canPaybill: boolean }) {
+export default function OrderManager({ orders, sessions, products, canOperate, claims, c2bTransactions, canReviewPayments, canPaybill }: { orders: LoungeOrder[]; sessions: ActiveSession[]; products: OrderProduct[]; canOperate: boolean; claims: PaybillClaim[]; c2bTransactions: C2bTransaction[]; canReviewPayments: boolean; canPaybill: boolean }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -70,15 +70,16 @@ export default function OrderManager({ orders, sessions, products, canOperate, c
     {message && <p className={`notice ${error ? 'error' : 'success-notice'}`} role="status">{message}</p>}
     <div className="table-scroll"><table className="data-table"><thead><tr><th>Order</th><th>Items</th><th>Total</th><th>Payment</th><th>Created</th><th>Actions</th></tr></thead><tbody>
       {orders.map((order) => <tr key={order.id}>
-        <td><b>{order.table_label}</b><small className="table-subline">{order.status}</small></td>
+        <td><b>{order.table_label}</b><small className="table-subline">{order.status} · {order.payment_reference}</small></td>
         <td>{order.lounge_order_items?.map((item) => `${item.quantity} × ${item.name}`).join(', ') || 'No items'}</td>
         <td className="money-cell">{formatMoney(order.total_cents)}</td>
         <td><span className={`state ${order.payment_status === 'paid' ? 'active' : order.payment_status === 'cancelled' ? 'ended' : 'ending_soon'}`}>{order.payment_status}</span>{order.latest_payment_status && <small className="table-subline">STK: {order.latest_payment_status.replace('_', ' ')}</small>}</td>
         <td>{new Date(order.created_at).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Nairobi' })}</td>
-        <td>{canOperate && order.status === 'open' && order.payment_status === 'unpaid' ? <><PaymentControls orderId={order.id} reference={`LO-${order.id.slice(0, 8).toUpperCase()}`} canPaybill={canPaybill} /><button className="end-button" onClick={() => cancelOrder(order.id)} disabled={busy}>Cancel order</button></> : '—'}</td>
+        <td>{canOperate && order.status === 'open' && order.payment_status === 'unpaid' ? <><PaymentControls orderId={order.id} reference={order.payment_reference} canPaybill={canPaybill} /><button className="end-button" onClick={() => cancelOrder(order.id)} disabled={busy}>Cancel order</button></> : '—'}</td>
       </tr>)}
       {orders.length === 0 && <tr><td colSpan={6} className="table-empty">No orders recorded yet.</td></tr>}
     </tbody></table></div>
     <PaybillReviewQueue claims={claims} canReview={canReviewPayments} />
+    <C2bReviewQueue transactions={c2bTransactions} />
   </>
 }

@@ -4,6 +4,7 @@ import { createClient as createSupabaseJsClient } from '@supabase/supabase-js'
 import { randomBytes } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { getStaffContext } from '@/lib/supabase/staff-context'
+import { darajaTimestamp, normalizeKenyanPhone } from '@/lib/mpesa/format'
 
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -24,9 +25,8 @@ function asString(value: FormDataEntryValue | null, limit: number) {
 export async function startMpesaStk(orderId: string, rawPhone: string) {
   const context = await getStaffContext()
   if (!context || !['owner', 'admin', 'manager', 'cashier'].includes(context.profile.role)) return { error: 'Cashier access is required.' }
-  const phone = rawPhone.replace(/[\s+()-]/g, '')
-  const normalizedPhone = phone.startsWith('0') ? `254${phone.slice(1)}` : phone
-  if (!/^(254[17]\d{8})$/.test(normalizedPhone)) return { error: 'Enter a Kenyan mobile number, such as 0712345678 or 254712345678.' }
+  const normalizedPhone = normalizeKenyanPhone(rawPhone)
+  if (!normalizedPhone) return { error: 'Enter a Kenyan mobile number, such as 0712345678 or 254712345678.' }
   if (!/^[0-9a-f-]{36}$/i.test(orderId)) return { error: 'Select a valid order.' }
   const app = appUrl()
   const service = serviceClient()
@@ -38,7 +38,7 @@ export async function startMpesaStk(orderId: string, rawPhone: string) {
   if (!app || !service || !consumer || !secret || !shortcode || !passkey) return { error: 'M-Pesa STK is not configured. Set the server-only Daraja credentials and public app URL first.' }
 
   const { data: order, error: orderError } = await context.supabase.from('lounge_orders')
-    .select('id,total_cents,status,payment_status').eq('id', orderId).maybeSingle()
+    .select('id,payment_reference,total_cents,status,payment_status').eq('id', orderId).maybeSingle()
   if (orderError || !order || order.status !== 'open' || order.payment_status !== 'unpaid') return { error: 'That order is no longer open for payment.' }
   if (Number(order.total_cents) < 100 || Number(order.total_cents) % 100 !== 0) return { error: 'STK Push requires an order total of at least KES 1 in whole shillings.' }
   const { data: pending } = await service.from('payment_attempts').select('id').eq('order_id', orderId).eq('status', 'pending').limit(1).maybeSingle()
@@ -49,7 +49,7 @@ export async function startMpesaStk(orderId: string, rawPhone: string) {
     order_id: orderId, expected_amount_cents: Number(order.total_cents), phone_number: normalizedPhone,
     callback_token: callbackToken, requested_by: context.userId,
   }).select('id').single()
-  if (insertError || !attempt) return { error: 'Could not create a secure payment request. Try again.' }
+  if (insertError || !attempt) return { error: insertError?.code === '23505' ? 'Another payment request or receipt is awaiting resolution for this order.' : 'Could not create a secure payment request. Try again.' }
 
   try {
     const base = mode === 'production' ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke'
@@ -59,7 +59,7 @@ export async function startMpesaStk(orderId: string, rawPhone: string) {
     if (!authResponse.ok) throw new Error('oauth')
     const { access_token: token } = await authResponse.json() as { access_token?: string }
     if (!token) throw new Error('oauth')
-    const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)
+    const timestamp = darajaTimestamp()
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64')
     const response = await fetch(`${base}/mpesa/stkpush/v1/processrequest`, {
       method: 'POST', cache: 'no-store', signal: AbortSignal.timeout(20000),
@@ -69,7 +69,7 @@ export async function startMpesaStk(orderId: string, rawPhone: string) {
         TransactionType: process.env.MPESA_TRANSACTION_TYPE === 'CustomerBuyGoodsOnline' ? 'CustomerBuyGoodsOnline' : 'CustomerPayBillOnline',
         Amount: Number(order.total_cents) / 100, PartyA: normalizedPhone, PartyB: shortcode,
         PhoneNumber: normalizedPhone, CallBackURL: `${app}/api/mpesa/callback/${callbackToken}`,
-        AccountReference: `LO-${order.id.slice(0, 8).toUpperCase()}`, TransactionDesc: 'LoungeOS order payment',
+        AccountReference: order.payment_reference, TransactionDesc: 'LoungeOS order payment',
       }),
     })
     const result = await response.json() as { ResponseCode?: string; MerchantRequestID?: string; CheckoutRequestID?: string }
@@ -94,7 +94,7 @@ export async function submitPaybillClaim(formData: FormData) {
   const { data: order } = await context.supabase.from('lounge_orders').select('id,total_cents,status,payment_status').eq('id', orderId).maybeSingle()
   if (!order || order.status !== 'open' || order.payment_status !== 'unpaid') return { error: 'That order is no longer open for payment.' }
   const { error } = await context.supabase.from('paybill_claims').insert({ order_id: orderId, amount_cents: order.total_cents, provider_receipt: receipt, submitted_by: context.userId })
-  if (error) return { error: error.code === '23505' ? 'That M-Pesa receipt has already been submitted.' : 'Could not submit the receipt for review.' }
+  if (error) return { error: error.code === '23505' ? error.message.includes('Another payment request') ? 'Another payment request or receipt is awaiting resolution for this order.' : 'That M-Pesa receipt has already been submitted.' : 'Could not submit the receipt for review.' }
   revalidatePath('/orders')
   return { success: 'Receipt submitted for manager verification. The order remains unpaid until approved.' }
 }
@@ -104,7 +104,21 @@ export async function reviewPaybillClaim(claimId: string, approve: boolean, reas
   if (!context || !['owner', 'admin', 'manager'].includes(context.profile.role)) return { error: 'Manager access is required to verify payment claims.' }
   if (!/^[0-9a-f-]{36}$/i.test(claimId) || reason.trim().length < 5 || reason.trim().length > 300) return { error: 'Provide a review explanation between 5 and 300 characters.' }
   const { error } = await context.supabase.rpc('review_paybill_claim', { p_claim_id: claimId, p_approve: approve, p_reason: reason.trim() })
-  if (error) return { error: error.message.includes('Payment claim') ? 'This claim has already been reviewed.' : 'The claim could not be reviewed.' }
+  if (error) return { error: error.message.includes('Payment claim') ? 'This claim has already been reviewed.' : error.message.includes('STK request') ? 'An STK request is still pending. Wait for its result before approving this receipt.' : error.message.includes('Daraja C2B') ? 'This receipt is already in the Daraja C2B queue. Reconcile it there instead.' : 'The claim could not be reviewed.' }
   revalidatePath('/orders')
   return { success: approve ? 'Receipt verified and order marked paid.' : 'Claim rejected with the explanation recorded.' }
+}
+
+export async function reviewMpesaC2bTransaction(transactionId: string, paymentReference: string, approve: boolean, reason: string) {
+  const context = await getStaffContext()
+  if (!context || !['owner', 'admin', 'manager'].includes(context.profile.role)) return { error: 'Manager access is required to reconcile M-Pesa confirmations.' }
+  if (!/^[A-Za-z0-9]{4,40}$/.test(transactionId) || paymentReference.trim().length > 40 || reason.trim().length < 5 || reason.trim().length > 300) {
+    return { error: 'Enter an order reference when approving and an explanation between 5 and 300 characters.' }
+  }
+  const { error } = await context.supabase.rpc('review_mpesa_c2b_transaction', {
+    p_transaction_id: transactionId, p_payment_reference: paymentReference.trim(), p_approve: approve, p_reason: reason.trim(),
+  })
+  if (error) return { error: error.message.includes('open unpaid order') ? 'The order reference was not found or its amount does not match the provider confirmation.' : error.message.includes('STK request') ? 'An STK request is still pending. Wait for its result before reconciling this C2B transaction.' : 'The M-Pesa transaction could not be reconciled.' }
+  revalidatePath('/orders')
+  return { success: approve ? 'Provider-confirmed transaction reconciled and order marked paid.' : 'Transaction rejected with the explanation recorded.' }
 }

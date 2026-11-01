@@ -18,7 +18,7 @@ export type BusinessSettings = {
   low_stock_alert_enabled: boolean
 }
 export type AuditRow = { id: number; entity_type: string; action: string; created_at: string }
-type IntegrationStatus = { stkReady: boolean; stkMode: string; manualPaymentsReady: boolean; staffProvisioningReady: boolean }
+type IntegrationStatus = { stkReady: boolean; stkMode: string; manualPaymentsReady: boolean; c2bReady: boolean; staffProvisioningReady: boolean }
 const roleOptions = ['owner', 'admin', 'manager', 'cashier', 'attendant', 'flavor_specialist'] as const
 
 export default function StaffManager({
@@ -104,8 +104,10 @@ export default function StaffManager({
       <div className="integration-status-list">
         <p><span>Daraja STK</span><b className={`state ${integrations.stkReady ? 'active' : 'ending_soon'}`}>{integrations.stkReady ? `configured · ${integrations.stkMode}` : 'credentials and callback URL needed'}</b></p>
         <p><span>Paybill / Till claims</span><b className={`state ${integrations.manualPaymentsReady ? 'active' : 'ending_soon'}`}>{integrations.manualPaymentsReady ? 'destination configured · review required' : 'business number needed'}</b></p>
+        <p><span>Daraja C2B confirmation</span><b className={`state ${integrations.c2bReady ? 'active' : 'ending_soon'}`}>{integrations.c2bReady ? 'server setup present · register URLs in Daraja' : 'callback token, URL, and shortcode needed'}</b></p>
         <p><span>Staff invitations and recovery</span><b className={`state ${integrations.staffProvisioningReady ? 'active' : 'ending_soon'}`}>{integrations.staffProvisioningReady ? 'server setup present · email delivery must be checked' : 'server key and public app URL needed'}</b></p>
-        <p><span>Background alert delivery</span><b className="state ending_soon">scheduler/provider not configured</b></p>
+        <p><span>Scheduled in-app alerts</span><b className="state active">database job active · every minute</b></p>
+        <p><span>External SMS, email, or push</span><b className="state ending_soon">provider not configured</b></p>
       </div>
       <p className="footnote">Readiness shows whether required environment values exist. It does not verify live provider credentials or email delivery. Never enter secret keys in the browser.</p>
     </section>

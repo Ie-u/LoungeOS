@@ -20,11 +20,13 @@ export default async function AdminPage() {
   const { data: optionData } = canEditSettings
     ? await supabase.from('shisha_options').select('id,name,duration_minutes,price_cents,is_available').order('name')
     : { data: [] }
-  const darajaCredentialsConfigured = Boolean(process.env.MPESA_CONSUMER_KEY && process.env.MPESA_CONSUMER_SECRET && process.env.MPESA_SHORTCODE && process.env.MPESA_PASSKEY && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NEXT_PUBLIC_APP_URL)
+  const callbackUrlReady = process.env.NEXT_PUBLIC_APP_URL?.startsWith('https://') ?? false
+  const darajaCredentialsConfigured = Boolean(process.env.MPESA_CONSUMER_KEY && process.env.MPESA_CONSUMER_SECRET && process.env.MPESA_SHORTCODE && process.env.MPESA_PASSKEY && process.env.SUPABASE_SERVICE_ROLE_KEY && callbackUrlReady)
   const integrations = {
     stkReady: darajaCredentialsConfigured,
     stkMode: process.env.MPESA_ENV === 'production' ? 'production' : 'sandbox',
     manualPaymentsReady: Boolean(process.env.MPESA_PAYBILL_NUMBER || process.env.MPESA_TILL_NUMBER),
+    c2bReady: Boolean(/^[a-f0-9]{64,128}$/i.test(process.env.MPESA_C2B_CALLBACK_TOKEN ?? '') && process.env.SUPABASE_SERVICE_ROLE_KEY && callbackUrlReady && process.env.MPESA_SHORTCODE && (process.env.MPESA_PAYBILL_NUMBER || process.env.MPESA_TILL_NUMBER)),
     staffProvisioningReady: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && (process.env.NEXT_PUBLIC_APP_URL || process.env.NODE_ENV === 'development')),
   }
 

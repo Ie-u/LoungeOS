@@ -322,8 +322,20 @@ a { color: inherit; }
 .integration-status-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .5rem 1rem; }
 .integration-status-list p { display: flex; flex-direction: column; gap: .45rem; padding: .75rem; border: 1px solid var(--line); border-radius: 9px; }
 .integration-status-list b.state { width: fit-content; }
+.notification-toolbar { align-items: center; }
+.notification-toolbar > button, .notification-list > li > button { border: 1px solid var(--line); border-radius: 8px; padding: .55rem .75rem; color: var(--ink); background: var(--mint); cursor: pointer; }
+.notification-toolbar > button:disabled, .notification-list > li > button:disabled { opacity: .5; cursor: wait; }
+.notification-list { display: grid; gap: .7rem; padding: 0; list-style: none; }
+.notification-list > li { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 10px; }
+.notification-unread { background: #f2f7f3; }
+.notification-read { opacity: .7; }
+.notification-copy { display: grid; gap: .25rem; }
+.notification-copy .eyebrow { margin: 0; }
+.notification-copy p { margin: 0; }
+.notification-copy small { color: var(--muted); }
+.sidebar nav .nav-count { margin-left: auto; min-width: 1.35rem; border-radius: 999px; padding: .1rem .35rem; color: #fff; background: var(--green); text-align: center; font-size: .7rem; font-weight: 700; line-height: 1.2; }
 .session-preset-list { display: grid; gap: .6rem; }
 .session-preset-row { display: grid; grid-template-columns: minmax(150px, 1.5fr) minmax(90px, .7fr) minmax(110px, .8fr) auto auto auto; gap: .65rem; align-items: end; }
 .session-preset-row > span { align-self: center; color: var(--muted); }
 .new-preset-form { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-@media (max-width: 720px) { .payment-controls { min-width: 0; max-width: 100%; } .payment-review li { align-items: flex-start; flex-direction: column; } .session-preset-row { grid-template-columns: 1fr 1fr; } .session-preset-row label:first-child { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .payment-controls { min-width: 0; max-width: 100%; } .payment-review li { align-items: flex-start; flex-direction: column; } .session-preset-row { grid-template-columns: 1fr 1fr; } .session-preset-row label:first-child { grid-column: 1 / -1; } .notification-list > li { align-items: flex-start; flex-direction: column; } }
