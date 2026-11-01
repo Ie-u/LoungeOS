@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import AppShell from '@/components/app-shell'
 import { getStaffContext } from '@/lib/supabase/staff-context'
-import SessionActions from './sessions/actions'
 
 type LoungeSession = {
   id: string
@@ -21,17 +20,27 @@ export default async function Home() {
   const { supabase, profile } = context
   const dateParts = new Intl.DateTimeFormat('en-KE', { timeZone: 'Africa/Nairobi', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
   const today = `${dateParts.find((part) => part.type === 'year')?.value}-${dateParts.find((part) => part.type === 'month')?.value}-${dateParts.find((part) => part.type === 'day')?.value}`
-  const dayStart = new Date(`${today}T00:00:00+03:00`).toISOString()
-  const [{ data: sessions, error }, { data: paidToday }] = await Promise.all([
+  const dayStartDate = new Date(`${today}T00:00:00+03:00`)
+  const dayStart = dayStartDate.toISOString()
+  const dayEnd = new Date(dayStartDate.getTime() + 24 * 60 * 60 * 1000).toISOString()
+  const canSeeSales = ['owner', 'admin', 'manager', 'cashier'].includes(profile.role)
+  const canSeeInventory = canSeeSales || profile.role === 'flavor_specialist'
+  const [{ data: settings }, { data: sessions, error }, { data: paidToday }] = await Promise.all([
+    supabase.from('business_settings').select('session_alert_minutes, low_stock_alert_enabled').eq('singleton', true).maybeSingle(),
     supabase.from('session_board').select('id, table_label, option_name, started_at, ends_at, timing_status').neq('status', 'ended').order('ends_at').limit(100),
-    supabase.from('lounge_orders').select('total_cents').eq('payment_status', 'paid').gte('created_at', dayStart).limit(2000),
+    canSeeSales ? supabase.from('lounge_orders').select('total_cents').eq('payment_status', 'paid').eq('status', 'open').gte('paid_at', dayStart).lt('paid_at', dayEnd).limit(2000) : Promise.resolve({ data: [], error: null }),
   ])
+  const { data: lowStockData } = settings?.low_stock_alert_enabled && canSeeInventory
+    ? await supabase.rpc('get_low_stock_count')
+    : { data: 0 }
   const rows = (sessions ?? []) as LoungeSession[]
   const overdue = rows.filter((session) => session.timing_status === 'overdue').length
   const endingSoon = rows.filter((session) => session.timing_status === 'ending_soon').length
   const shiftRevenue = (paidToday ?? []).reduce((sum, order) => sum + Number(order.total_cents), 0)
   const money = new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 })
-  const canOperate = ['owner', 'admin', 'cashier'].includes(profile.role)
+  const canOperate = ['owner', 'admin', 'manager', 'cashier'].includes(profile.role)
+  const lowStockCount = Number(lowStockData ?? 0)
+  const sessionAlertMinutes = settings?.session_alert_minutes ?? 10
   const dateLabel = new Intl.DateTimeFormat('en-KE', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Africa/Nairobi' }).format(new Date()).toUpperCase()
 
   return <AppShell profile={profile}>
@@ -41,14 +50,15 @@ export default async function Home() {
         <div className="live-pill"><i /> LIVE OPERATIONS</div>
       </header>
       <div className="date-strip">{dateLabel} <span>·</span> LOUNGE OPERATIONS</div>
-      <section className="stats" aria-label="Live operations summary">
+      <section className={`stats ${canSeeSales ? '' : 'staff-stats'}`} aria-label="Live operations summary">
         <article><span>ACTIVE SESSIONS</span><strong>{rows.length.toString().padStart(2, '0')}</strong><small>Across the lounge</small><b className="stat-icon">◷</b></article>
-        <article><span>ENDING SOON</span><strong>{endingSoon.toString().padStart(2, '0')}</strong><small>Next 10 minutes</small><b className="stat-icon warn">⌛</b></article>
+        <article><span>ENDING SOON</span><strong>{endingSoon.toString().padStart(2, '0')}</strong><small>Next {sessionAlertMinutes} minutes</small><b className="stat-icon warn">⌛</b></article>
         <article><span>OVERDUE</span><strong>{overdue.toString().padStart(2, '0')}</strong><small>Need attention</small><b className="stat-icon danger">!</b></article>
-        <article><span>PAID TODAY</span><strong className="metric-money">{money.format(shiftRevenue / 100)}</strong><small>Confirmed by lounge staff</small><b className="stat-icon report">↗</b></article>
+        {canSeeSales && <article><span>PAID TODAY</span><strong className="metric-money">{money.format(shiftRevenue / 100)}</strong><small>Recorded by authorized staff</small><b className="stat-icon report">↗</b></article>}
+        {settings?.low_stock_alert_enabled && canSeeInventory && <article><span>LOW STOCK</span><strong>{lowStockCount.toString().padStart(2, '0')}</strong><small>At or below reorder level</small><b className="stat-icon warn">◈</b></article>}
       </section>
       <section className="panel" id="sessions">
-        <div className="panel-head"><div><p className="eyebrow">RIGHT NOW</p><h2>Live sessions <span className="count">{rows.length}</span></h2></div><Link href="/sessions#new-session" className="primary-button">＋ Start session</Link></div>
+        <div className="panel-head"><div><p className="eyebrow">RIGHT NOW</p><h2>Live sessions <span className="count">{rows.length}</span></h2></div>{canOperate && <Link href="/sessions#new-session" className="primary-button">＋ Start session</Link>}</div>
         {error ? <p className="notice error">Could not load sessions. Check the migration status and your staff permissions.</p> : rows.length === 0 ? <div className="empty"><span>◷</span><b>No active sessions yet</b><p>Start a session to see its timer and status here.</p></div> : null}
         {!error && <div className="session-list">{rows.slice(0, 5).map((session) => <article className="session-row" key={session.id}>
           <span className="table-icon">{session.table_label}</span>
@@ -58,9 +68,10 @@ export default async function Home() {
         {!canOperate && <p className="notice role-notice">Your attendant account can view assigned sessions. Owner, admin, or cashier access is required to start or change a session.</p>}
       </section>
       <section className="quick-links" aria-label="Operations shortcuts">
-        <Link href="/orders"><span>▤</span><b>Record an order</b><small>Link a charge to a table</small></Link>
-        <Link href="/inventory"><span>◈</span><b>Update stock</b><small>Log a stock movement</small></Link>
-        <Link href="/reports"><span>▥</span><b>View reports</b><small>Review daily totals</small></Link>
+        {canSeeSales && <Link href="/orders"><span>▤</span><b>Record an order</b><small>Link a charge to a table</small></Link>}
+        <Link href={profile.role === 'flavor_specialist' ? '/flavors' : '/inventory'}><span>◈</span><b>{profile.role === 'flavor_specialist' ? 'Flavor tasks' : 'Update stock'}</b><small>{profile.role === 'flavor_specialist' ? 'Prepare assigned flavor orders' : 'Log a stock movement'}</small></Link>
+        <Link href="/attendance"><span>◉</span><b>Attendance</b><small>Check in or review a shift</small></Link>
+        {canSeeSales && <Link href="/reports"><span>▥</span><b>View reports</b><small>Review daily totals</small></Link>}
       </section>
       <p className="footnote">Session timing comes from PostgreSQL and refreshes every 30 seconds.</p>
     </main>

@@ -7,11 +7,14 @@ import type { ReactNode } from 'react'
 import type { StaffProfile } from '@/lib/supabase/staff-context'
 
 const sections = [
-  { href: '/', label: 'Overview', icon: '▦' },
-  { href: '/sessions', label: 'Sessions', icon: '◷' },
-  { href: '/orders', label: 'Orders', icon: '▤' },
-  { href: '/inventory', label: 'Inventory', icon: '◈' },
-  { href: '/reports', label: 'Reports', icon: '▥' },
+  { href: '/', label: 'Overview', icon: '▦', roles: ['owner', 'admin', 'manager', 'cashier', 'attendant', 'flavor_specialist'] },
+  { href: '/sessions', label: 'Sessions', icon: '◷', roles: ['owner', 'admin', 'manager', 'cashier', 'attendant', 'flavor_specialist'] },
+  { href: '/orders', label: 'Orders', icon: '▤', roles: ['owner', 'admin', 'manager', 'cashier'] },
+  { href: '/inventory', label: 'Inventory', icon: '◈', roles: ['owner', 'admin', 'manager', 'cashier', 'flavor_specialist'] },
+  { href: '/reports', label: 'Reports', icon: '▥', roles: ['owner', 'admin', 'manager', 'cashier'] },
+  { href: '/attendance', label: 'Attendance', icon: '◉', roles: ['owner', 'admin', 'manager', 'cashier', 'attendant', 'flavor_specialist'] },
+  { href: '/flavors', label: 'Flavor tasks', icon: '❋', roles: ['owner', 'admin', 'manager', 'flavor_specialist'] },
+  { href: '/admin', label: 'Staff & settings', icon: '⚙', roles: ['owner', 'admin', 'manager'] },
 ]
 
 export default function AppShell({ profile, children }: { profile: StaffProfile; children: ReactNode }) {
@@ -24,7 +27,7 @@ export default function AppShell({ profile, children }: { profile: StaffProfile;
         <Image src="/loungeos-neon-logo.png" alt="LoungeOS by Cynux Production" width={1280} height={1280} priority sizes="(max-width: 720px) 140px, 210px" />
       </Link>
       <nav aria-label="Main navigation">
-        {sections.map((section) => <Link
+        {sections.filter((section) => section.roles.includes(profile.role)).map((section) => <Link
           key={section.href}
           href={section.href}
           className={pathname === section.href ? 'nav-active' : ''}

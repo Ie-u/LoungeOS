@@ -16,7 +16,7 @@ export default async function SessionsPage() {
   const sessions = allSessions ?? []
   const active = sessions.filter((session) => session.status === 'active')
   const history = sessions.filter((session) => session.status === 'ended').slice(0, 30)
-  const canOperate = ['owner', 'admin', 'cashier'].includes(profile.role)
+  const canOperate = ['owner', 'admin', 'manager', 'cashier'].includes(profile.role)
 
   return <AppShell profile={profile}><main className="content">
     <header className="page-heading"><div><p className="eyebrow">LOUNGE OPERATIONS</p><h1>Sessions</h1><p>Start, monitor, extend, and end lounge sessions.</p></div><span className="page-count">{active.length} active</span></header>
@@ -24,7 +24,7 @@ export default async function SessionsPage() {
     <section className="panel" id="new-session">
       <div className="panel-head"><div><p className="eyebrow">CURRENT FLOOR</p><h2>Active sessions <span className="count">{active.length}</span></h2></div></div>
       <SessionActions options={options ?? []} sessions={active.map((session) => ({ id: session.id, table_label: session.table_label, option_name: session.option_name, ends_at: session.ends_at, timing_status: session.timing_status }))} canOperate={canOperate} />
-      {!canOperate && <p className="notice role-notice">Your {profile.role} role is view-only here. Ask an owner or admin to grant cashier access if you need to start, extend, or end sessions.</p>}
+      {!canOperate && <p className="notice role-notice">Your {profile.role === 'flavor_specialist' ? 'flavor tasks link you to the sessions you support. Session timing is managed by the cashier or manager.' : `Your ${profile.role} role is view-only here. Ask a manager if you need session controls.`}</p>}
       {!error && !canOperate && active.length === 0 && <div className="empty"><span>◷</span><b>No active sessions</b><p>Sessions will appear when an authorized cashier starts one.</p></div>}
     </section>
     <section className="panel history-panel">

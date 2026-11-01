@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 export type StaffProfile = {
   user_id: string
   display_name: string
-  role: 'owner' | 'admin' | 'cashier' | 'attendant'
+  role: 'owner' | 'admin' | 'manager' | 'cashier' | 'attendant' | 'flavor_specialist'
+  is_active: boolean
 }
 
 export async function getStaffContext() {
@@ -16,10 +17,10 @@ export async function getStaffContext() {
 
   const { data: profile, error } = await supabase
     .from('staff_profiles')
-    .select('user_id, display_name, role')
+    .select('user_id, display_name, role, is_active')
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (error || !profile) return null
+  if (error || !profile || !profile.is_active) return null
   return { supabase, userId, profile: profile as StaffProfile }
 }
